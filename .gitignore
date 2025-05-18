@@ -1,0 +1,18 @@
+# Arquivos de compilação
+bin/
+*.class
+
+# Banco de dados local
+chat.db
+
+# Arquivos de IDE
+.vscode/
+.idea/
+*.iml
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos temporários
+*.log
