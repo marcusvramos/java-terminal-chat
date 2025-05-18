@@ -22,25 +22,26 @@ public class ClientHandler extends Thread {
     private void printMenu() {
         out.println();
         out.println("=== Comandos disponíveis ===");
-        out.println("/listarusuarios                → Lista usuários online");
-        out.println("/listargrupos                  → Lista todos os grupos");
-        out.println("/criargroup nome               → Cria grupo");
-        out.println("/adicionar login grupo         → Convida usuário para grupo");
-        out.println("/listarmembros grupo           → Lista membros do grupo");
-        out.println("/sairgrupo grupo               → Sai do grupo");
-        out.println("/status online/ocupado         → Muda status");
-        out.println("/msg login,maria texto         → Msg privada para 1 ou + usuários (precisa aceite)");
-        out.println("/msggroup grupo robson@Olá     → Msg só para Robson no grupo");
-        out.println("/msggroup grupo robson,sisc@Oi → Msg só para esses usuários no grupo");
-        out.println("/aceitar login                 → Aceitar chat privado");
-        out.println("/recuperar                     → Recuperar senha por email");
-        out.println("/aceitargrupo grupo            → Aceitar convite/entrada em grupo");
-        out.println("/recusargrupo grupo            → Recusar convite/entrada em grupo");
-        out.println("/solicitarentrada grupo        → Pedir entrada (todos membros devem aceitar)");
-        out.println("/aceitarentrada grupo login    → Aceitar entrada do usuário no grupo");
-        out.println("/recusarentrada grupo login    → Recusar entrada do usuário no grupo");
-        out.println("/sair                          → Sair do chat");
-        out.println("============================\n");
+        out.println("/listarusuarios                    → Lista usuários online");
+        out.println("/listargrupos                      → Lista todos os grupos");
+        out.println("/criargroup nome                   → Cria grupo");
+        out.println("/adicionar login grupo             → Convida usuário para grupo");
+        out.println("/listarmembros grupo               → Lista membros do grupo");
+        out.println("/sairgrupo grupo                   → Sai do grupo");
+        out.println("/status online/ocupado             → Muda status");
+        out.println("/msg login,maria texto             → Msg privada para 1 ou + usuários (precisa aceite)");
+        out.println("/msggroup grupo mensagem           → Msg para TODOS do grupo (exceto você)");
+        out.println("/msggroup grupo robson@Olá         → Msg só para Robson no grupo");
+        out.println("/msggroup grupo robson,sisc@Oi     → Msg só para esses usuários no grupo");
+        out.println("/aceitar login                     → Aceitar chat privado");
+        out.println("/recuperar                         → Recuperar senha por email");
+        out.println("/aceitargrupo grupo                → Aceitar convite/entrada em grupo");
+        out.println("/recusargrupo grupo                → Recusar convite/entrada em grupo");
+        out.println("/solicitarentrada grupo            → Pedir entrada (todos membros devem aceitar)");
+        out.println("/aceitarentrada grupo login        → Aceitar entrada do usuário no grupo");
+        out.println("/recusarentrada grupo login        → Recusar entrada do usuário no grupo");
+        out.println("/sair                              → Sair do chat");
+        out.println("========================================================================================\n");
     }
 
     public void run() {
@@ -179,6 +180,10 @@ public class ClientHandler extends Thread {
                     ChatServer.db.updateUserStatus(user.getLogin(), p[1]);
                     user.setStatus(p[1]);
                     out.println("Status alterado para: " + p[1]);
+
+                    if (p[1].equalsIgnoreCase("online")) {
+                        sendUndeliveredMessages();
+                    }
                 }
             } else if (input.startsWith("/listarusuarios")) {
                 List<User> users = ChatServer.db.getOnlineUsers();
@@ -274,23 +279,6 @@ public class ClientHandler extends Thread {
                         }
                     }
                 }
-            } else if (input.startsWith("/msg ")) {
-                // /msg maria,robson texto
-                String[] p = input.split(" ", 3);
-                if (p.length < 3) {
-                    out.println("Uso: /msg login,maria texto");
-                    continue;
-                }
-                String[] destinos = p[1].split(",");
-                for (String destino : destinos) {
-                    destino = destino.toLowerCase();
-                    requestPrivateChat(destino, p[2]);
-                }
-            } else if (input.startsWith("/aceitar ")) {
-                String[] p = input.split(" ");
-                if (p.length > 1) {
-                    acceptPrivateChat(p[1].toLowerCase());
-                }
             } else if (input.startsWith("/msggroup")) {
                 // /msggroup grupo robson@Oi! ou robson,sisc@Oi!
                 String[] p = input.split(" ", 3);
@@ -299,6 +287,55 @@ public class ClientHandler extends Thread {
                     continue;
                 }
                 sendMessageToSelectedInGroup(p[1].toLowerCase(), p[2]);
+            } else if (input.startsWith("/msg")) {
+                String[] p = input.split(" ", 3);
+                if (p.length < 3) {
+                    out.println("Uso: /msg login mensagem");
+                    continue;
+                }
+                String destinos = p[1];
+                String texto = p[2];
+                for (String destino : destinos.split(",")) {
+                    destino = destino.trim().toLowerCase();
+                    if (destino.equals(user.getLogin())) continue;
+                    User destUser = ChatServer.db.getUserByLogin(destino);
+                    if (destUser == null) {
+                        out.println("Usuário " + destino + " não encontrado.");
+                        continue;
+                    }
+
+                    // VERIFICA SE JÁ FOI AUTORIZADO O CHAT PRIVADO ENTRE OS USUÁRIOS
+                    Set<String> autorizados = ChatServer.allowedPrivateChats.getOrDefault(user.getLogin(), new HashSet<>());
+                    if (autorizados.contains(destino)) {
+                        // Entrega mensagem normalmente (respeitando status online/ocupado/offline)
+                        String destStatus = destUser.getStatus().toLowerCase();
+                        Message m = new Message(user.getLogin(), destino, texto);
+                        if (destStatus.equals("online") && ChatServer.onlineClients.containsKey(destino)) {
+                            ChatServer.onlineClients.get(destino).out.println("[PRIVADO] " + user.getLogin() + " (" + m.getTimestamp() + "): " + texto);
+                            m.setDelivered(true);
+                            out.println("Mensagem entregue para " + destino + ".");
+                        } else {
+                            out.println("Usuário " + destino + " está '" + destStatus + "'. Mensagem será entregue quando ficar online.");
+                        }
+                        ChatServer.db.saveMessage(m);
+                    } else {
+                        // NÃO AUTORIZADO: Envia pedido de chat privado e armazena mensagem pendente
+                        if (ChatServer.onlineClients.containsKey(destino)) {
+                            ChatServer.pendingPrivateRequests.putIfAbsent(destino, new HashSet<>());
+                            ChatServer.pendingPrivateRequests.get(destino).add(user.getLogin());
+                            ChatServer.pendingPrivateMessages.put(destino + ":" + user.getLogin(), texto);
+                            ChatServer.onlineClients.get(destino).out.println("Usuário '" + user.getLogin() + "' deseja iniciar um chat privado com você. Aceitar? (/aceitar " + user.getLogin() + ")");
+                            out.println("Pedido de chat privado enviado a " + destino + ". Aguarde aceite.");
+                        } else {
+                            out.println("Usuário " + destino + " está offline. Mensagem não pode ser enviada sem aceite.");
+                        }
+                    }
+                }
+            } else if (input.startsWith("/aceitar ")) {
+                String[] p = input.split(" ");
+                if (p.length > 1) {
+                    acceptPrivateChat(p[1].toLowerCase());
+                }
             } else if (input.startsWith("/solicitarentrada")) {
                 String[] p = input.split(" ");
                 if (p.length > 1) {
@@ -389,7 +426,7 @@ public class ClientHandler extends Thread {
         }
     }
 
-    // Envia mensagem só para alguns usuários do grupo
+    // Envia mensagem só para alguns usuários do grupo ou para todos
     private void sendMessageToSelectedInGroup(String group, String content) throws SQLException {
         if (!ChatServer.db.groupExists(group)) {
             out.println("Grupo não existe.");
@@ -400,35 +437,44 @@ public class ClientHandler extends Thread {
             out.println("Você não faz parte do grupo.");
             return;
         }
-        String[] partes = content.split("@", 2);
-        List<String> destinatarios;
-        String texto;
-        if (partes.length == 2) {
-            destinatarios = Arrays.asList(partes[0].split(","));
-            texto = partes[1];
-        } else {
-            destinatarios = new ArrayList<>(members);
-            destinatarios.remove(user.getLogin());
-            texto = content;
-        }
-        boolean enviado = false;
-        for (String dest : destinatarios) {
-            dest = dest.trim();
-            if (!members.contains(dest) || dest.equals(user.getLogin())) continue;
-            User userDest = ChatServer.db.getUserByLogin(dest);
-            if (userDest == null) continue;
-            Message m = new Message(user.getLogin(), dest, "[Grupo " + group + "] " + texto);
-            if (ChatServer.onlineClients.containsKey(dest)) {
-                ChatServer.onlineClients.get(dest).out.println("[Grupo " + group + "] " + user.getLogin() + " (" + m.getTimestamp() + "): " + texto);
-                m.setDelivered(true);
-                enviado = true;
+        // Se content não tiver @, manda pra todos
+        if (!content.contains("@")) {
+            for (String dest : members) {
+                if (dest.equals(user.getLogin())) continue;
+                User userDest = ChatServer.db.getUserByLogin(dest);
+                if (userDest == null) continue;
+                Message m = new Message(user.getLogin(), dest, "[Grupo " + group + "] " + content);
+                if (ChatServer.onlineClients.containsKey(dest)) {
+                    ChatServer.onlineClients.get(dest).out.println("[Grupo " + group + "] " + user.getLogin() + " (" + m.getTimestamp() + "): " + content);
+                    m.setDelivered(true);
+                }
+                ChatServer.db.saveMessage(m);
             }
-            ChatServer.db.saveMessage(m);
+            out.println("Mensagem enviada a todos do grupo.");
+        } else {
+            // Caso clássico: nomes@login1,login2@Mensagem
+            String[] partes = content.split("@", 2);
+            List<String> destinatarios = Arrays.asList(partes[0].split(","));
+            String texto = partes[1];
+            boolean enviado = false;
+            for (String dest : destinatarios) {
+                dest = dest.trim();
+                if (!members.contains(dest) || dest.equals(user.getLogin())) continue;
+                User userDest = ChatServer.db.getUserByLogin(dest);
+                if (userDest == null) continue;
+                Message m = new Message(user.getLogin(), dest, "[Grupo " + group + "] " + texto);
+                if (ChatServer.onlineClients.containsKey(dest)) {
+                    ChatServer.onlineClients.get(dest).out.println("[Grupo " + group + "] " + user.getLogin() + " (" + m.getTimestamp() + "): " + texto);
+                    m.setDelivered(true);
+                    enviado = true;
+                }
+                ChatServer.db.saveMessage(m);
+            }
+            if (enviado)
+                out.println("Mensagem enviada aos destinatários selecionados no grupo.");
+            else
+                out.println("Ninguém do grupo está online para receber agora.");
         }
-        if (enviado)
-            out.println("Mensagem enviada aos destinatários selecionados no grupo.");
-        else
-            out.println("Ninguém do grupo está online para receber agora.");
     }
 
     // Solicitação de entrada em grupo (precisa aceite de todos)
