@@ -26,6 +26,9 @@ public class ChatServer {
             System.out.println("\n==========================================");
             System.out.println("    Servidor de Chat iniciado na porta 12345");
             System.out.println("==========================================\n");
+            System.out.println("Alunos:");
+            System.out.println("Aluno 1: Marcus Vinicius Ramos de Araujo");
+            System.out.println("Aluno 2: Guilherme Colonhese Camargo\n");
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();

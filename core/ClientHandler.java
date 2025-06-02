@@ -50,7 +50,13 @@ public class ClientHandler extends Thread {
             out = new PrintWriter(socket.getOutputStream(), true);
 
             Utils.printSeparator();
-            out.println(" Bem-vindo ao CHAT TERMINAL!\nDigite /cadastro, /login ou /recuperar para senha.");
+            out.println("Alunos:");
+            out.println("Aluno 1: Marcus Vinicius Ramos de Araujo");
+            out.println("Aluno 2: Guilherme Colonhese Camargo");
+            Utils.printSeparator();
+
+            Utils.printSeparator();
+            out.println("\nBem-vindo ao CHAT TERMINAL!\nDigite /cadastro, /login ou /recuperar para senha.");
             Utils.printSeparator();
 
             boolean authenticated = false;
